@@ -1,32 +1,133 @@
-import "./App.css";
-import { Canvas } from "react-three-fiber";
-import { useState } from "react";
+import * as THREE from "three";
+import { OrbitControls } from "three/examples/jsm/controls/OrbitControls";
+import {
+  Canvas,
+  extend,
+  useFrame,
+  useLoader,
+  useThree,
+} from "react-three-fiber";
+import circleImg from "./circle.png";
+import { Suspense, useCallback, useMemo, useRef } from "react";
+extend({ OrbitControls });
 
-const Box = () => {
-  const [hovered, setHovered] = useState(false);
-  const [active, setActive] = useState(false);
+function CameraControls() {
+  const {
+    camera,
+    gl: { domElement },
+  } = useThree();
+
+  const controlsRef = useRef();
+  useFrame(() => controlsRef.current.update());
 
   return (
-    <mesh
-      onPointerOver={() => setHovered(true)}
-      onPointerOut={() => setHovered(false)}
-      onClick={() => setActive(!active)}
-      scale={active ? [1.5, 1.5, 1.5] : [1, 1, 1]}
-    >
-      <boxBufferGeometry attach="geometry" args={[1, 1, 1]} />
-      <meshBasicMaterial
-        attach="material"
-        color={hovered ? "gray" : "purple"}
-      />
-    </mesh>
+    <orbitControls
+      ref={controlsRef}
+      args={[camera, domElement]}
+      autoRotate
+      autoRotateSpeed={-0.2}
+    />
   );
-};
+}
+
+function Points() {
+  const imgTex = useLoader(THREE.TextureLoader, circleImg);
+  const bufferRef = useRef();
+
+  let t = 4;
+  let f = 0.002;
+  let a = 5;
+  const graph = useCallback(
+    (x, z) => {
+      return Math.sin(f * (x ** 2 + z ** 2 + t)) * a;
+    },
+    [t, f, a]
+  );
+
+  const count = 500;
+  const sep = 1;
+  let positions = useMemo(() => {
+    let positions = [];
+
+    for (let xi = 0; xi < count; xi++) {
+      for (let zi = 0; zi < count; zi++) {
+        let x = sep * (xi - count / 2);
+        let z = sep * (zi - count / 2);
+        let y = graph(x, z);
+        positions.push(x, y, z);
+      }
+    }
+
+    return new Float32Array(positions);
+  }, [count, sep, graph]);
+
+  useFrame(() => {
+    t = 5;
+    a += 0.05;
+
+    const positions = bufferRef.current.array;
+
+    let i = 0;
+    for (let xi = 0; xi < count; xi++) {
+      for (let zi = 0; zi < count; zi++) {
+        let x = sep * (xi - count / 2);
+        let z = sep * (zi - count / 2);
+
+        positions[i + 1] = graph(x, z);
+        i += 3;
+      }
+    }
+
+    bufferRef.current.needsUpdate = true;
+  });
+
+  return (
+    <points>
+      <bufferGeometry attach="geometry">
+        <bufferAttribute
+          ref={bufferRef}
+          attachObject={["attributes", "position"]}
+          array={positions}
+          count={positions.length / 3}
+          itemSize={3}
+        />
+      </bufferGeometry>
+
+      <pointsMaterial
+        attach="material"
+        map={imgTex}
+        color={0x00aaff}
+        size={0.5}
+        sizeAttenuation
+        transparent={false}
+        alphaTest={0.5}
+        opacity={1.0}
+      />
+    </points>
+  );
+}
+
+function AnimationCanvas() {
+  return (
+    <Canvas
+      colorManagement={false}
+      camera={{ position: [100, 10, 0], fov: 75 }}
+    >
+      <Suspense fallback={null}>
+        <Points />
+      </Suspense>
+      <CameraControls />
+    </Canvas>
+  );
+}
 
 function App() {
   return (
-    <Canvas>
-      <Box />
-    </Canvas>
+    <div className="App">
+      <Suspense fallback={<div>Loading...</div>}>
+        <AnimationCanvas />
+      </Suspense>
+    </div>
   );
 }
 
